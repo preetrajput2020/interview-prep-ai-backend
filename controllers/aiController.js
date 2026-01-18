@@ -8,22 +8,44 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 // @access  Private
 const generateInterviewQuestions = async (req, res) => {
   try {
-    const { role, experience, topicsToFocus, numberOfQuestions } = req.body;
+    // Accept BOTH backend + frontend field names
+    const {
+      // backend expected keys
+      role,
+      experience,
+      topicsToFocus,
+      numberOfQuestions,
 
-    if (!role || !experience || !topicsToFocus || !numberOfQuestions) {
+      // frontend possible keys
+      targetRole,
+      yearsOfExperience,
+      topicsToFocusOn,
+      topics,
+      description,
+      count,
+    } = req.body;
+
+    const finalRole = role || targetRole || "Interview Candidate";
+    const finalExperience = experience || yearsOfExperience || "Fresher";
+    const finalTopics = topicsToFocus || topicsToFocusOn || topics || "General";
+    const finalCount = Number(numberOfQuestions || count || 10);
+
+    if (!finalRole || !finalExperience || !finalTopics) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
     // Use your existing prompt but add strict rules
     const basePrompt = questionAnswerPrompt(
-      role,
-      experience,
-      topicsToFocus,
-      numberOfQuestions
+      finalRole,
+      finalExperience,
+      finalTopics,
+      finalCount
     );
 
     const prompt = `
 ${basePrompt}
+
+Extra Notes (optional): ${description || "N/A"}
 
 STRICT RULES:
 - Return ONLY valid JSON (no markdown, no extra text)
@@ -45,7 +67,7 @@ Return JSON in this exact format:
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
-      response_format: { type: "json_object" }, // IMPORTANT: forces JSON output
+      response_format: { type: "json_object" }, // forces JSON output
     });
 
     const rawText = response.choices?.[0]?.message?.content || "";
@@ -60,8 +82,6 @@ Return JSON in this exact format:
       });
     }
 
-    // Return only questions array if your frontend expects array directly
-    // If your frontend expects object, keep `res.json(data)`
     return res.status(200).json(data);
   } catch (error) {
     return res.status(500).json({
@@ -104,7 +124,7 @@ Return JSON in this exact format:
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
-      response_format: { type: "json_object" }, // IMPORTANT
+      response_format: { type: "json_object" }, // forces JSON output
     });
 
     const rawText = response.choices?.[0]?.message?.content || "";
