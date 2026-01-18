@@ -34,7 +34,6 @@ const generateInterviewQuestions = async (req, res) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // Use your existing prompt but add strict rules
     const basePrompt = questionAnswerPrompt(
       finalRole,
       finalExperience,
@@ -82,7 +81,8 @@ Return JSON in this exact format:
       });
     }
 
-    return res.status(200).json(data);
+    // IMPORTANT: frontend expects ARRAY directly (not { questions: [] })
+    return res.status(200).json(data?.questions || []);
   } catch (error) {
     return res.status(500).json({
       message: "Failed to generate questions",
