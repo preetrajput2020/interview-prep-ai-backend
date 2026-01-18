@@ -41,3 +41,16 @@ app.use("/uploads", express.static(path.join(__dirname,"uploads"), {}));
 // Start Server 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+app.get("/api/test-gemini", async (req, res) => {
+  try {
+    const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const result = await model.generateContent("Generate 3 JavaScript interview questions");
+    res.json({ ok: true, text: result.response.text() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});

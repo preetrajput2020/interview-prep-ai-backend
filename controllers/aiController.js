@@ -1,76 +1,131 @@
-const { GoogleGenAI } = require("@google/genai");
+const Groq = require("groq-sdk");
 const { conceptExplainPrompt, questionAnswerPrompt } = require("../utils/prompts");
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// @desc    Generate interview questions and answers using Gemini
+// @desc    Generate interview questions and answers using Groq
 // @route   POST /api/ai/generate-questions
 // @access  Private
 const generateInterviewQuestions = async (req, res) => {
-    try {
-        const { role, experience, topicsToFocus, numberOfQuestions } = req.body;
+  try {
+    const { role, experience, topicsToFocus, numberOfQuestions } = req.body;
 
-        if( !role || !experience || !topicsToFocus || !numberOfQuestions ){
-            return res.status(400).json({ message: "Missing required fields"});
-        }
-
-        const prompt = questionAnswerPrompt( role, experience, topicsToFocus, numberOfQuestions);
-
-        const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash-lite",
-            contents: prompt,
-        });
-
-        let rawText = response.text;
-
-        // Clean it: Remove ```json and ``` from beginning and end
-        const cleanedText = rawText
-            .replace(/^```json\s*/, "") // remove starting ```json
-            .replace(/```$/, "") // remove ending ```
-            .trim(); // remove extra spaces
-
-        // Now safe to parse
-        const data = JSON.parse(cleanedText);
-
-        res.status(200).json(data);       
-    } catch (error) {
-        res.status(500).json({ message: "Failed to generate questions", error: error.message, });
+    if (!role || !experience || !topicsToFocus || !numberOfQuestions) {
+      return res.status(400).json({ message: "Missing required fields" });
     }
+
+    // Use your existing prompt but add strict rules
+    const basePrompt = questionAnswerPrompt(
+      role,
+      experience,
+      topicsToFocus,
+      numberOfQuestions
+    );
+
+    const prompt = `
+${basePrompt}
+
+STRICT RULES:
+- Return ONLY valid JSON (no markdown, no extra text)
+- Do NOT include code blocks or code examples
+- Keep answers in simple text
+
+Return JSON in this exact format:
+{
+  "questions": [
+    { "question": "....", "answer": "...." }
+  ]
+}
+`;
+
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        { role: "system", content: "You must return ONLY valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+      response_format: { type: "json_object" }, // IMPORTANT: forces JSON output
+    });
+
+    const rawText = response.choices?.[0]?.message?.content || "";
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      return res.status(500).json({
+        message: "AI returned invalid JSON",
+        raw: rawText,
+      });
+    }
+
+    // Return only questions array if your frontend expects array directly
+    // If your frontend expects object, keep `res.json(data)`
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to generate questions",
+      error: error.message,
+    });
+  }
 };
 
-
-// @desc    Generate explains a interview question
+// @desc    Generate explanation of an interview question using Groq
 // @route   POST /api/ai/generate-explanation
 // @access  Private
 const generateConceptExplanation = async (req, res) => {
-    try {
-        const { question } = req.body;
-        if(!question){
-            return res.status(400).json({ message: "Missing required fields" });
-        }
+  try {
+    const { question } = req.body;
 
-        const prompt = conceptExplainPrompt(question);
-
-        const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash-lite",
-            contents: prompt,
-        });
-
-        let rawText = response.text;
-
-        // Clean it: Remove ```json and ``` from beginning and end
-        const cleanedText = rawText
-            .replace(/^```json\s*/, "") //remove starting ```json
-            .replace(/```$/, "") // remove ending
-            .trim(); // remove extra spaces
-
-        // Now safe to parse
-        const data = JSON.parse(cleanedText);
-
-        res.status(200).json(data);
-    } catch (error) {
-        res.status(500).json({ message: "Failed to generate questions", error: error.message, });     
+    if (!question) {
+      return res.status(400).json({ message: "Missing required fields" });
     }
+
+    const basePrompt = conceptExplainPrompt(question);
+
+    const prompt = `
+${basePrompt}
+
+STRICT RULES:
+- Return ONLY valid JSON (no markdown, no extra text)
+- Do NOT include code blocks
+
+Return JSON in this exact format:
+{
+  "explanation": "...."
+}
+`;
+
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        { role: "system", content: "You must return ONLY valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+      response_format: { type: "json_object" }, // IMPORTANT
+    });
+
+    const rawText = response.choices?.[0]?.message?.content || "";
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      return res.status(500).json({
+        message: "AI returned invalid JSON",
+        raw: rawText,
+      });
+    }
+
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to generate explanation",
+      error: error.message,
+    });
+  }
 };
 
 module.exports = { generateInterviewQuestions, generateConceptExplanation };
